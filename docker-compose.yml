@@ -148,6 +148,8 @@ services:
       - COLLECTOR_URL=http://collector:8001/weather-data
       - GENERATOR_INTERVAL=5
       - GENERATOR_STATIONS=3
+      - GENERATOR_BATCH_SIZE=10
+      - GENERATOR_USE_BATCH=true
     depends_on:
       - collector
 

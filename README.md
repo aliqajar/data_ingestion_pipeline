@@ -26,6 +26,44 @@ Execute all tests:
 docker compose run test
 ```
 
+## Assumptions
+
+This system was designed with the following assumptions:
+
+### Data Format
+- Weather data follows a format similar to NOAA endpoints
+- Key fields include station_id, temperature, humidity, wind_speed, and timestamp
+- Timestamp is in ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
+
+### Data Ingestion
+- System supports both individual data point ingestion and batch processing
+- Single-point endpoint: `/weather-data` for individual readings
+  - Optimized for real-time, low-latency data submission
+  - Suitable for stations with reliable, continuous connectivity
+  - Each request processes one weather data point independently
+- Batch endpoint: `/weather-data/batch` for submitting multiple readings simultaneously
+  - Designed for efficiency in transmitting multiple records in a single HTTP request
+  - Ideal for stations with intermittent connectivity or bandwidth constraints
+  - Reduces network overhead for stations that collect readings over time before transmission
+  - Provides detailed results on success/failure of each record in the batch
+- The system can handle and deduplicate data regardless of ingestion method
+- Both endpoints share the same validation and processing pipeline, ensuring consistent data quality
+
+### Data Partitioning
+- Data is primarily partitioned by station_id
+- The composite key (station_id, timestamp) is used for efficient querying
+- This structure optimizes for time-series queries for specific stations
+
+### Scalability Considerations
+- No sharding is currently implemented
+- Future horizontal sharding could be based on geographical locations if data ingestion increases significantly
+- The system is designed to scale horizontally by adding more instances of each service
+
+### Real-time vs Batch Processing
+- The system prioritizes near real-time processing
+- Some delay (seconds to minutes) is acceptable
+- Data consistency is prioritized over absolute real-time delivery
+
 ## System Design
 
 This system implements at-least-once semantics, optimized for high-throughput data ingestion. The architecture ensures:
@@ -76,11 +114,19 @@ The Query Service retrieves data from the database and provides endpoints for qu
 The system includes a data generator service to simulate weather stations sending data:
 
 1. Access the Generator Service documentation at http://localhost:8004/docs
-2. Use the `/start` endpoint to begin generating data. This will create weather data for multiple stations.
+2. Use the `/start` endpoint to begin generating data. You can configure:
+   - `interval`: Time between data generation cycles (in seconds)
+   - `stations`: Number of weather stations to simulate
+   - `use_batch`: Set to true to use batch data submission (default: true)
+   - `batch_size`: Number of records to send in each batch (default: 5)
+   - `collector_url`: URL of the collector service
+   - `duplicate_percent`: Percentage of duplicate data for testing deduplication (default: 20%)
 
    ![Starting the data generator](Weather_Start.png)
 
 3. After generating enough data (a few seconds is usually sufficient), use the `/stop` endpoint to stop the generator.
+
+4. You can check the generator status using the `/status` endpoint to see statistics about the data generation process.
 
 ### 2. Query the Data
 
@@ -181,6 +227,14 @@ If you've generated data but nothing appears in your query results:
 
 For the purpose of this demo, several advanced features were considered but not implemented to maintain simplicity and clarity:
 
+### Security Considerations
+- **SSL Termination**: In a production environment, all services would be placed behind a load balancer with SSL termination
+- **Security in Transit**: HTTPS would be enabled for all external communication
+- **Database Security**: Since weather data is not considered highly sensitive, encryption at rest was deemed unnecessary
+- **Network Isolation**: In a production environment, internal services would be placed in private subnets with no direct external access
+- **API Authentication**: Token-based authentication would be implemented for the collector API in production
+- **Role-Based Access Control**: Different permission levels would be established for different API endpoints
+
 ### Push vs Pull Model
 - Current implementation uses a **Push Model** where weather stations send data to our collector service
 - A **Pull Model** would be more efficient in production, where our system would:
@@ -206,6 +260,14 @@ For the purpose of this demo, several advanced features were considered but not 
 - **Advanced Health Checks**: More sophisticated service health monitoring
 - **Circuit Breakers**: Would help prevent cascading failures
 
+### API Design Considerations
+- **GraphQL vs REST**: Considered implementing GraphQL for the query service
+  - GraphQL would offer greater flexibility for clients to request exactly the data they need
+  - However, REST was chosen for better maintainability and simpler implementation
+  - GraphQL would increase complexity for caching and monitoring
+  - The structured nature of weather data fits well with REST resource patterns
+  - REST endpoints are more compatible with typical time-series data access patterns
+
 ### Query Service Optimizations
 - **Cursor-based Pagination**: Would improve handling of large datasets using timestamp-based cursors
 - **Async Job System**: For handling long-running queries without blocking
@@ -218,3 +280,75 @@ For the purpose of this demo, several advanced features were considered but not 
 - **Partitioning Strategies**: Advanced TimescaleDB chunk management
 
 These features would be valuable in a production environment but were omitted to keep the demo focused and maintainable. 
+
+## Usage
+
+### Running the System
+```bash
+docker compose up --build
+```
+
+### Testing the System
+
+#### Individual Data Point Submission
+Send a single weather data point to the collector service:
+
+```bash
+curl -X POST http://localhost:8000/weather-data \
+  -H "Content-Type: application/json" \
+  -d '{
+    "station_id": "STATION123",
+    "temperature": 25.5,
+    "humidity": 65.2,
+    "wind_speed": 15.7,
+    "timestamp": "2023-04-15T14:30:00Z"
+  }'
+```
+
+#### Batch Data Submission
+Send multiple weather data points in a single request:
+
+```bash
+curl -X POST http://localhost:8000/weather-data/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "batch_id": "BATCH-001",
+    "records": [
+      {
+        "station_id": "STATION123",
+        "temperature": 25.5,
+        "humidity": 65.2,
+        "wind_speed": 15.7,
+        "timestamp": "2023-04-15T14:30:00Z"
+      },
+      {
+        "station_id": "STATION456",
+        "temperature": 22.3,
+        "humidity": 70.1,
+        "wind_speed": 10.5,
+        "timestamp": "2023-04-15T14:30:00Z"
+      }
+    ]
+  }'
+```
+
+The batch endpoint returns a summary of the processing results:
+```json
+{
+  "status": "completed",
+  "batch_id": "BATCH-001",
+  "total": 2,
+  "successful": 2,
+  "failed": 0,
+  "failures": []
+}
+```
+
+#### Querying Data
+Query weather data for a specific station:
+
+```bash
+curl -X GET http://localhost:8003/weather/{station_id}
+```
+
+Replace `{station_id}` with the actual station ID you want to query. 

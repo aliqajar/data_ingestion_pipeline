@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
+from typing import Optional, List, Dict
 from pydantic import BaseModel, ValidationError
 from confluent_kafka import Producer
 import json
@@ -8,6 +8,7 @@ import os
 import ssl
 import logging
 import uuid
+import asyncio
 from dotenv import load_dotenv
 
 # Configure logging
@@ -73,6 +74,10 @@ class WeatherData(BaseModel):
     timestamp: str  # ISO8601
     trace_id: Optional[str] = None  # Optional trace ID for tracking
 
+class WeatherDataBatch(BaseModel):
+    records: List[WeatherData]
+    batch_id: Optional[str] = None
+
 def delivery_report(err, msg, trace_id):
     if err:
         logger.error(f"[TRACE:{trace_id}] Delivery failed: {err}, Message: {msg.value().decode('utf-8')}")
@@ -106,16 +111,8 @@ async def health_check():
     
     return status
 
-@app.post("/weather-data")
-async def ingest_weather_data(raw_data: dict, request: Request, x_trace_id: Optional[str] = Header(None)):
-    # Get or generate trace ID
-    trace_id = x_trace_id or raw_data.get('trace_id') or str(uuid.uuid4())
-    logger.info(f"[TRACE:{trace_id}] Received weather data request: {raw_data}")
-    
-    if not producer:
-        logger.error(f"[TRACE:{trace_id}] Kafka producer not available")
-        raise HTTPException(status_code=503, detail="Kafka producer not available")
-        
+async def process_weather_data(raw_data: dict, trace_id: str):
+    """Process a single weather data record"""
     try:
         # Add trace_id if not present
         if 'trace_id' not in raw_data:
@@ -131,8 +128,7 @@ async def ingest_weather_data(raw_data: dict, request: Request, x_trace_id: Opti
             
         logger.info(f"[TRACE:{trace_id}] Sending data to Kafka topic: {KAFKA_TOPIC}")
         producer.produce(KAFKA_TOPIC, payload.encode('utf-8'), callback=dr_callback)
-        producer.flush()
-        logger.info(f"[TRACE:{trace_id}] Weather data sent to Kafka")
+        return True, None
         
     except ValidationError as e:
         # Malformed data to DLQ
@@ -147,15 +143,86 @@ async def ingest_weather_data(raw_data: dict, request: Request, x_trace_id: Opti
             delivery_report(err, msg, trace_id)
             
         producer.produce(KAFKA_DLQ_TOPIC, dlq_payload.encode('utf-8'), callback=dr_callback)
-        producer.flush()
-        logger.warning(f"[TRACE:{trace_id}] Invalid data sent to DLQ")
-        raise HTTPException(status_code=400, detail="Malformed data, sent to DLQ.")
+        return False, str(e)
     except Exception as e:
-        logger.error(f"[TRACE:{trace_id}] Error ingesting data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[TRACE:{trace_id}] Error processing data: {e}")
+        return False, str(e)
 
+@app.post("/weather-data")
+async def ingest_weather_data(raw_data: dict, request: Request, x_trace_id: Optional[str] = Header(None)):
+    """Ingest a single weather data record"""
+    # Get or generate trace ID
+    trace_id = x_trace_id or raw_data.get('trace_id') or str(uuid.uuid4())
+    logger.info(f"[TRACE:{trace_id}] Received weather data request: {raw_data}")
+    
+    if not producer:
+        logger.error(f"[TRACE:{trace_id}] Kafka producer not available")
+        raise HTTPException(status_code=503, detail="Kafka producer not available")
+    
+    success, error = await process_weather_data(raw_data, trace_id)
+    
+    # Flush all messages
+    producer.flush()
+    
+    if not success:
+        raise HTTPException(status_code=400, detail=f"Error processing data: {error}")
+    
     logger.info(f"[TRACE:{trace_id}] Successfully ingested data")
     return {"status": "success", "detail": "Data ingested successfully"}
+
+@app.post("/weather-data/batch")
+async def ingest_weather_data_batch(batch_data: dict, request: Request, x_trace_id: Optional[str] = Header(None)):
+    """Ingest multiple weather data records in a batch"""
+    # Generate batch ID and use as trace ID if not provided
+    batch_id = x_trace_id or batch_data.get('batch_id') or str(uuid.uuid4())
+    logger.info(f"[BATCH:{batch_id}] Received batch with {len(batch_data.get('records', []))} records")
+    
+    if not producer:
+        logger.error(f"[BATCH:{batch_id}] Kafka producer not available")
+        raise HTTPException(status_code=503, detail="Kafka producer not available")
+    
+    # Validate the batch structure
+    try:
+        if 'records' not in batch_data or not isinstance(batch_data['records'], list):
+            logger.error(f"[BATCH:{batch_id}] Invalid batch format: 'records' field missing or not a list")
+            raise HTTPException(status_code=400, detail="Invalid batch format: 'records' field missing or not a list")
+        
+        # Process each record in the batch
+        results = []
+        for index, record in enumerate(batch_data['records']):
+            # Generate a unique trace ID for each record based on the batch ID
+            record_trace_id = f"{batch_id}-{index}"
+            
+            # Process the record
+            success, error = await process_weather_data(record, record_trace_id)
+            results.append({
+                "index": index,
+                "success": success,
+                "error": error
+            })
+        
+        # Flush all messages at once for efficiency
+        producer.flush()
+        
+        # Count successes and failures
+        successes = sum(1 for r in results if r["success"])
+        failures = len(results) - successes
+        
+        logger.info(f"[BATCH:{batch_id}] Batch processing complete: {successes} successes, {failures} failures")
+        
+        # Return a summary with details on failures
+        return {
+            "status": "completed",
+            "batch_id": batch_id,
+            "total": len(results),
+            "successful": successes,
+            "failed": failures,
+            "failures": [r for r in results if not r["success"]]
+        }
+            
+    except Exception as e:
+        logger.error(f"[BATCH:{batch_id}] Error processing batch: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing batch: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
