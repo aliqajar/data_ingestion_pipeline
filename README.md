@@ -23,7 +23,7 @@ docker compose up -d
 ### Running Tests
 Execute all tests:
 ```bash
-docker compose run test
+docker compose run --rm test
 ```
 
 ## Assumptions
@@ -283,12 +283,7 @@ These features would be valuable in a production environment but were omitted to
 
 ## Usage
 
-### Running the System
-```bash
-docker compose up --build
-```
-
-### Testing the System
+### API Examples
 
 #### Individual Data Point Submission
 Send a single weather data point to the collector service:
@@ -351,4 +346,45 @@ Query weather data for a specific station:
 curl -X GET http://localhost:8003/weather/{station_id}
 ```
 
-Replace `{station_id}` with the actual station ID you want to query. 
+Replace `{station_id}` with the actual station ID you want to query.
+
+## Testing
+
+The system includes both unit tests and integration tests to ensure functionality is working correctly.
+
+### Test Types
+
+- **Unit Tests**: Test individual components in isolation, mocking dependencies
+- **Integration Tests**: Test components with actual dependencies (Kafka, PostgreSQL, etc.)
+
+### Running Tests
+
+Run all tests (unit and integration):
+
+```bash
+docker compose run --rm test
+```
+
+Run tests for a specific service:
+
+```bash
+docker compose run --rm test python -m pytest services/collector/
+docker compose run --rm test python -m pytest services/query/
+```
+
+Run specific test files:
+
+```bash
+docker compose run --rm test python -m pytest services/collector/tests/test_collector.py -v
+docker compose run --rm test python -m pytest services/query/tests/test_query_integration.py -v
+```
+
+### Integration Tests
+
+Integration tests are designed to be resilient to temporary unavailability of dependencies. Tests will:
+
+1. Check if required services (database, Redis, etc.) are available
+2. Skip tests that depend on unavailable services
+3. Test REST endpoints without depending on message broker functionality
+
+This approach ensures tests can run in environments where some dependencies might not be fully available or properly configured. 

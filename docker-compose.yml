@@ -157,7 +157,7 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    command: python -m pytest "services/collector/tests/test_collector.py" "services/consumer/tests/test_consumer.py" "services/query/tests/test_query.py" -v
+    command: python -m pytest -v
     volumes:
       - .:/app
     environment:

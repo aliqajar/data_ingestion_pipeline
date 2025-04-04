@@ -184,8 +184,9 @@ async def ingest_weather_data_batch(batch_data: dict, request: Request, x_trace_
     # Validate the batch structure
     try:
         if 'records' not in batch_data or not isinstance(batch_data['records'], list):
-            logger.error(f"[BATCH:{batch_id}] Invalid batch format: 'records' field missing or not a list")
-            raise HTTPException(status_code=400, detail="Invalid batch format: 'records' field missing or not a list")
+            error_msg = "Invalid batch format: 'records' field missing or not a list"
+            logger.error(f"[BATCH:{batch_id}] {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
         
         # Process each record in the batch
         results = []
@@ -220,6 +221,9 @@ async def ingest_weather_data_batch(batch_data: dict, request: Request, x_trace_
             "failures": [r for r in results if not r["success"]]
         }
             
+    except HTTPException as he:
+        # Pass through HTTP exceptions with their status codes
+        raise he
     except Exception as e:
         logger.error(f"[BATCH:{batch_id}] Error processing batch: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing batch: {str(e)}")
