@@ -1,0 +1,6 @@
+-r base.txt
+# Query-specific dependencies
+sqlalchemy==2.0.27
+alembic==1.13.1
+cachetools==5.3.2
+# No additional dependencies needed for query service 

@@ -1,0 +1,111 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+weather_pipeline_env/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Environment files with sensitive data
+.env
+.env.*
+*.env
+!.env.example
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+*.sql.gz
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Docker
+.docker/
+docker-data/
+docker-compose.override.yml
+
+# Output files
+*.csv
+*.json
+*.xlsx
+*.pdf
+*.zip
+*.tar.gz
+
+# OS specific
+## Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+## macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+## Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.classpath
+.project
+.settings/
+*.sublime-workspace
+*.sublime-project
+.ipynb_checkpoints
+nbproject/
+
+# Redis dump
+*.rdb
+dump.rdb
+
+# Kafka
+kafka-logs/
+zookeeper-data/
+
+# Cache directories
+.mypy_cache/
+.ruff_cache/
+
+# Local data
+data/
+temp/ 

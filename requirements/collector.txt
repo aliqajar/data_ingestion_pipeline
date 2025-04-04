@@ -1,0 +1,5 @@
+-r base.txt
+# No additional dependencies needed for collector service 
+# Collector-specific dependencies
+aiohttp==3.9.3
+aiokafka==0.12.0 

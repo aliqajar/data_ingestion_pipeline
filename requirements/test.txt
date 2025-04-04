@@ -1,0 +1,9 @@
+pytest==8.0.0
+pytest-asyncio==0.23.5
+pytest-cov==4.1.0
+httpx==0.26.0
+fastapi==0.110.0
+python-dotenv==1.0.1
+starlette==0.36.3
+aiohttp==3.9.3
+requests==2.31.0 
