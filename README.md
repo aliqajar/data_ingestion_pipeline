@@ -37,9 +37,8 @@ This system implements at-least-once semantics, optimized for high-throughput da
 ### Architecture Diagram
 To view the system architecture, see the flowchart in `Weather Data Ingestion.png`. To add this diagram to the README, move the file to the `docs` directory and update the reference as follows:
 
-```markdown
 ![Weather Data Ingestion Pipeline](Weather_Data_Ingestion.png)
-```
+
 
 ## API Documentation
 When the system is running, access the API documentation at:
