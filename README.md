@@ -72,6 +72,36 @@ This system implements at-least-once semantics, optimized for high-throughput da
 - Additional deduplication during database insertion using TimescaleDB's unique constraints
 - Efficient time-series data storage using TimescaleDB extension, optimized for large-scale time-series data ingestion and querying
 
+### Data Flow
+
+The system follows a clear separation of concerns with the following data flow:
+
+1. **Collector Service**: 
+   - Ingests incoming weather data from stations
+   - Validates basic message structure
+   - Places valid messages on Kafka queue for processing
+   - Routes failed messages to a dead-letter queue (DLQ) for later analysis
+
+2. **Consumer Service**:
+   - Consumes messages from Kafka
+   - Performs detailed data validation and verification
+   - Deduplicates data in memory
+   - Stores valid data in the TimescaleDB database
+   - Routes invalid data to a dead-letter queue (DLQ)
+
+3. **TimescaleDB Database**:
+   - Uses PostgreSQL with TimescaleDB extension for time-series optimization
+   - Implements a composite primary key (station_id + timestamp) for efficient querying and deduplication
+   - Provides hypertable functionality for improved time-range queries
+
+4. **Query Service**:
+   - Handles incoming read queries from clients
+   - Retrieves data from TimescaleDB based on query parameters
+   - Provides aggregation and time-series analysis endpoints
+   - Implements caching for frequently accessed queries
+
+In a production environment, the Collector and Query services would be the only external-facing components and would be placed behind load balancers for improved availability, scalability, and security.
+
 ### Architecture Diagram
 To view the system architecture, see the flowchart in `Weather Data Ingestion.png`. To add this diagram to the README, move the file to the `docs` directory and update the reference as follows:
 
