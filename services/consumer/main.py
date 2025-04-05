@@ -39,7 +39,7 @@ manager = Manager()
 ssl_context = None
 
 # Set up signal handlers for graceful shutdown
-shutdown_event = asyncio.Event()
+shutdown_event = threading.Event()
 
 def signal_handler():
     logger.info("Received shutdown signal")
@@ -186,7 +186,7 @@ def send_to_dlq(msg, trace_id=None):
     except Exception as e:
         logger.error(f"[TRACE:{trace_id}] Failed to send to DLQ: {e}")
 
-# Global variables
+# Initialize global variables at the module level
 buffer = manager.dict()  # Thread-safe dictionary
 buffer_lock = threading.Lock()
 stats = {

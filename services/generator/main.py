@@ -35,18 +35,19 @@ DEFAULT_USE_BATCH = os.getenv('GENERATOR_USE_BATCH', 'true').lower() == 'true'  
 logger.info(f"Starting Generator service on {HOST}:{PORT}")
 logger.info(f"Default collector URL: {DEFAULT_COLLECTOR_URL}")
 
-# Global state
-generator_task = None
+# Global state variables - initialize at module level
 is_generating = False
 generation_config = {
-    "interval": DEFAULT_INTERVAL,
-    "stations": DEFAULT_STATION_COUNT,
-    "collector_url": DEFAULT_COLLECTOR_URL,
-    "total_generated": 0,
-    "total_duplicates": 0,  # Track total duplicates generated
-    "batch_size": DEFAULT_BATCH_SIZE,  # Number of records per batch
-    "use_batch": DEFAULT_USE_BATCH  # Whether to use batch endpoint
+    'interval': DEFAULT_INTERVAL,
+    'stations': DEFAULT_STATION_COUNT,
+    'collector_url': DEFAULT_COLLECTOR_URL,
+    'duplicate_percent': 20,
+    'batch_size': DEFAULT_BATCH_SIZE,
+    'use_batch': DEFAULT_USE_BATCH,
+    'total_generated': 0,
+    'total_duplicates': 0
 }
+generator_task = None
 
 class GeneratorConfig(BaseModel):
     interval: Optional[int] = 1

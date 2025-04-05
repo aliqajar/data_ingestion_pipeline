@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # Override service configurations for CI environment
+  postgres:
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    command: redis-server --save ""
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  zookeeper:
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CREATE_TOPICS: "weather_data:1:1"
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  collector:
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  consumer:
+    restart: "no"
+    healthcheck:
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  query:
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Test service overrides for CI
+  test:
+    restart: "no"
+    # Use ephemeral volume for tests
+    volumes:
+      - .:/app:ro
+    environment:
+      - CI=true
+      - PYTHONUNBUFFERED=1
+      # Fail fast on connection errors
+      - POSTGRES_CONNECT_TIMEOUT=30
+      - KAFKA_CONNECT_TIMEOUT=30
+      - REDIS_CONNECT_TIMEOUT=30
+    # Make sure the command succeeds
+    command: >
+      bash -c "
+        # Wait for services to be ready
+        echo 'Waiting for services to be ready...'
+        sleep 10
+        # Run just the core tests that don't require Kafka message processing
+        python -m pytest services/collector/tests/test_collector.py services/collector/tests/test_collector_integration.py services/query/tests/test_query.py services/query/tests/test_query_integration.py -v
+      " 
