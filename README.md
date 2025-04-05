@@ -265,6 +265,41 @@ For the purpose of this demo, several advanced features were considered but not 
 - **API Authentication**: Token-based authentication would be implemented for the collector API in production
 - **Role-Based Access Control**: Different permission levels would be established for different API endpoints
 
+### Infrastructure as Code
+- **Terraform Configurations**: Production-ready cloud infrastructure templates were not included
+  - AWS infrastructure provisioning would use Terraform for repeatable, version-controlled deployments
+  - Resource definitions would cover network setup, container orchestration, and managed services
+  - Separate configurations for development, staging, and production environments
+- **Environment-specific Configurations**: Different configuration profiles for development, staging, and production
+  - Production would use managed Kafka (MSK), RDS for PostgreSQL with TimescaleDB, and ElastiCache
+  - Lower environments might use simpler infrastructure with fewer replicas
+- This was considered out of scope for the initial implementation but would be necessary for actual deployment
+
+### CI/CD Pipeline
+- **Automated Pipeline**: A complete CI/CD workflow was not implemented
+  - Would include automated building, testing, and deployment stages
+  - Container image versioning and registry management
+  - Static code analysis and security scanning
+  - Automated database migrations
+- **Environment Promotion**: Systematic promotion from development to staging to production
+  - Immutable infrastructure principles
+  - Blue-green or canary deployment strategies
+  - Rollback mechanisms
+- Implementation would leverage GitHub Actions, Jenkins, or similar CI/CD platforms
+
+### Kafka Integration Testing
+- **Container-based Kafka Testing Challenges**: Integration testing with Kafka in containers is difficult
+  - Network isolation in containers causes connectivity issues
+  - Timing and ordering guarantees differ from production environments
+  - Container startup dependencies and race conditions are hard to manage
+  - Transient failures can occur that don't represent actual code issues
+- **Alternative Approaches**: More robust alternatives would include:
+  - Using dedicated test Kafka clusters in lower environments
+  - Implementing circuit breakers and retry mechanisms
+  - Mocking Kafka for unit tests, but using real Kafka for integration tests
+  - Running integration tests against dedicated, persistent infrastructure
+- Our current tests focus on REST API interactions rather than message processing to avoid these challenges
+
 ### Push vs Pull Model
 - Current implementation uses a **Push Model** where weather stations send data to our collector service
 - A **Pull Model** would be more efficient in production, where our system would:
