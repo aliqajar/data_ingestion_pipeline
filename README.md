@@ -103,9 +103,9 @@ The system follows a clear separation of concerns with the following data flow:
 In a production environment, the Collector and Query services would be the only external-facing components and would be placed behind load balancers for improved availability, scalability, and security.
 
 ### Architecture Diagram
-To view the system architecture, see the flowchart in `Weather Data Ingestion.png`. To add this diagram to the README, move the file to the `docs` directory and update the reference as follows:
+To view the system architecture, see the flowchart in `media/Weather_Data_Ingestion.png`. To add this diagram to the README, move the file to the `docs` directory and update the reference as follows:
 
-![Weather Data Ingestion Pipeline](Weather_Data_Ingestion.png)
+![Weather Data Ingestion Pipeline](media/Weather_Data_Ingestion.png)
 
 
 ## API Documentation
@@ -120,22 +120,22 @@ When the system is running, access the API documentation at:
 #### Generator Service
 The Generator Service simulates weather stations and sends data to the Collector Service. It provides endpoints to start and stop data generation.
 
-![Generator Service API](Generator.png)
+![Generator Service API](media/Generator.png)
 
 #### Collector Service
 The Collector Service receives weather data from stations (or the Generator), validates it, and publishes it to Kafka. It includes endpoints for data ingestion and health monitoring.
 
-![Collector Service API](Collector.png)
+![Collector Service API](media/Collector.png)
 
 #### Consumer Service
 The Consumer Service reads data from Kafka, processes it for deduplication, and stores it in the TimescaleDB database. It provides endpoints to view consumer statistics and health status.
 
-![Consumer Service API](Consumer.png)
+![Consumer Service API](media/Consumer.png)
 
 #### Query Service
 The Query Service retrieves data from the database and provides endpoints for querying raw weather data, aggregated statistics, and time-series analysis.
 
-![Query Service API](Query.png)
+![Query Service API](media/Query.png)
 
 ## Using the System
 
@@ -152,7 +152,7 @@ The system includes a data generator service to simulate weather stations sendin
    - `collector_url`: URL of the collector service
    - `duplicate_percent`: Percentage of duplicate data for testing deduplication (default: 20%)
 
-   ![Starting the data generator](Weather_Start.png)
+   ![Starting the data generator](media/Weather_Start.png)
 
 3. After generating enough data (a few seconds is usually sufficient), use the `/stop` endpoint to stop the generator.
 
@@ -165,7 +165,7 @@ Once data has been generated and processed, you can query it using the Query Ser
 1. Access the Query Service documentation at http://localhost:8003/docs
 2. Use the `/weather/{station_id}` endpoint to retrieve weather data for a specific station. You can optionally provide start_time and end_time parameters to filter by date range.
 
-   ![Querying weather data](Weather_Query.png)
+   ![Querying weather data](media/Weather_Query.png)
 
 3. The API will return all weather data for the requested station, ordered by timestamp.
 
