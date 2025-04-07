@@ -103,7 +103,6 @@ The system follows a clear separation of concerns with the following data flow:
 In a production environment, the Collector and Query services would be the only external-facing components and would be placed behind load balancers for improved availability, scalability, and security.
 
 ### Architecture Diagram
-To view the system architecture, see the flowchart in `media/Weather_Data_Ingestion.png`. To add this diagram to the README, move the file to the `docs` directory and update the reference as follows:
 
 ![Weather Data Ingestion Pipeline](media/Weather_Data_Ingestion.png)
 
