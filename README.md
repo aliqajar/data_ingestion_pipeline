@@ -451,4 +451,4 @@ Integration tests are designed to be resilient to temporary unavailability of de
 2. Skip tests that depend on unavailable services
 3. Test REST endpoints without depending on message broker functionality
 
-This approach ensures tests can run in environments where some dependencies might not be fully available or properly configured. 
+This approach ensures tests can run in environments where some dependencies might not be fully available or properly configured. "# data_ingestion_pipeline" 
