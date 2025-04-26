@@ -1,6 +1,6 @@
 # Weather System Pipeline
 
-A high-performance weather data ingestion and query system built with FastAPI, Kafka, PostgreSQL (TimescaleDB), and Redis.
+A high-performance weather data ingestion and query system built with React (TypeScript), FastAPI, Kafka, PostgreSQL (TimescaleDB), and Redis.
 
 ## Quick Start
 
@@ -19,6 +19,17 @@ For subsequent runs, you can simply use:
 ```bash
 docker compose up -d
 ```
+### Running UI
+Access the UI on port 3000 (http://localhost:3000/)
+
+![Generator UI](media/generator_ui.png)
+
+![Query UI - Raw](media/query_ui_raw.png)
+
+![Query UI - Aggregate](media/query_ui_agg.png)
+
+![Query UI - Timeseries](media/query_ui_ts.png)
+
 
 ### Running Tests
 Execute all tests:
