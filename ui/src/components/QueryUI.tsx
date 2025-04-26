@@ -87,7 +87,7 @@ const QueryUI: React.FC = () => {
     setData(null); // Clear previous data
 
     // Construct the API URL based on query type
-    const queryServiceBaseUrl = 'http://localhost:8001/weather'; // Assuming default query service port
+    const queryServiceBaseUrl = 'http://localhost:8003/weather'; // Ensure this uses port 8003
     let url = '';
     const params = new URLSearchParams({
       start_time: startTime.toISOString(),

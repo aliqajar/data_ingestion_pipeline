@@ -16,6 +16,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - weather_network
 
   redis:
     image: redis:7
@@ -28,6 +30,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - weather_network
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.1
@@ -41,6 +45,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - weather_network
 
   kafka:
     image: confluentinc/cp-kafka:7.5.1
@@ -62,6 +68,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - weather_network
 
   collector:
     build:
@@ -87,6 +95,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - weather_network
 
   consumer:
     build:
@@ -114,6 +124,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    networks:
+      - weather_network
 
   query:
     build:
@@ -136,22 +148,27 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - weather_network
 
   generator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: python -m generator.main
+    build: ./services/generator
     ports:
-      - "8004:8004"
+      - "${GENERATOR_PORT:-8004}:${GENERATOR_PORT:-8004}"
     environment:
+      - PYTHONUNBUFFERED=1
+      - GENERATOR_PORT=${GENERATOR_PORT:-8004}
       - COLLECTOR_URL=http://collector:8001/weather-data
-      - GENERATOR_INTERVAL=5
-      - GENERATOR_STATIONS=3
-      - GENERATOR_BATCH_SIZE=10
-      - GENERATOR_USE_BATCH=true
+      - GENERATOR_INTERVAL=${GENERATOR_INTERVAL:-1}
+      - GENERATOR_STATIONS=${GENERATOR_STATIONS:-5}
+      - GENERATOR_BATCH_SIZE=${GENERATOR_BATCH_SIZE:-10}
+      - GENERATOR_USE_BATCH=${GENERATOR_USE_BATCH:-true}
     depends_on:
       - collector
+    networks:
+      - weather_network
+    volumes:
+      - ./services/generator:/app
 
   test:
     build: 
@@ -180,7 +197,13 @@ services:
       - postgres
       - redis
       - kafka
+    networks:
+      - weather_network
 
 volumes:
   postgres_data:
-  redis_data: 
+  redis_data:
+  
+networks:
+  weather_network:
+    driver: bridge 

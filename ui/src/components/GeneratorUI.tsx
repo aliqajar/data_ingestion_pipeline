@@ -60,12 +60,28 @@ const GeneratorUI: React.FC = () => {
   const [pollIntervalId, setPollIntervalId] = useState<NodeJS.Timeout | null>(null);
 
   // Config state for the start request
-  const [config, setConfig] = useState<StartConfig>({});
+  const [config, setConfig] = useState<StartConfig>({
+    interval: 1,
+    stations: 5,
+    collector_url: 'http://localhost:8001/weather-data',
+    duplicate_percent: 20,
+    batch_size: 10,
+    use_batch: true
+  });
   const [lastMessagesPerSecond, setLastMessagesPerSecond] = useState<number>(0);
   const [previousTotalGenerated, setPreviousTotalGenerated] = useState<number>(0);
   const [lastPollTime, setLastPollTime] = useState<number | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
+  const [retryTimer, setRetryTimer] = useState<NodeJS.Timeout | null>(null);
 
-  const generatorBaseUrl = 'http://localhost:8004'; // Default generator port
+  // Use both localhost and container name to handle different environments
+  const generatorUrls = [
+    'http://localhost:8004',
+    'http://generator:8004',
+    'http://host.docker.internal:8004'
+  ];
+  const [currentUrlIndex, setCurrentUrlIndex] = useState<number>(0);
+  const generatorBaseUrl = generatorUrls[currentUrlIndex];
 
   // --- Fetch Status Function ---
   const fetchStatus = useCallback(async () => {
@@ -73,14 +89,38 @@ const GeneratorUI: React.FC = () => {
     if (loading) return;
 
     setLoading(true);
-    setError(null);
     try {
-      const response = await fetch(`${generatorBaseUrl}/status`);
+      console.log("Fetching generator status from:", `${generatorBaseUrl}/status`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch(`${generatorBaseUrl}/status`, {
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Content-Type': 'application/json'
+        },
+        method: 'GET',
+        cache: 'no-cache',
+        credentials: 'omit',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data: GeneratorStatus = await response.json();
+      
+      const data = await response.json();
+      console.log("Received status data:", data);
+      setRetryCount(0); // Reset retry count on success
+      
+      // If data doesn't have expected structure, create a default one
+      if (!data || !data.config) {
+        throw new Error('Invalid response format from generator service');
+      }
+      
       setStatus(data);
 
       // Calculate messages per second
@@ -97,28 +137,50 @@ const GeneratorUI: React.FC = () => {
          setLastMessagesPerSecond(0); // Reset if not generating
       }
 
-      setPreviousTotalGenerated(data.total_generated);
+      setPreviousTotalGenerated(data.total_generated || 0);
       setLastPollTime(now);
 
-      // Update config form if status provides defaults we don't have
+      // Update config form with values from status
       setConfig(prev => ({
-        interval: prev.interval ?? data.config.interval,
-        stations: prev.stations ?? data.config.stations,
-        collector_url: prev.collector_url ?? data.info.external_collector_url, // Use external for UI display/input
-        duplicate_percent: prev.duplicate_percent ?? data.config.duplicate_percent,
-        batch_size: prev.batch_size ?? data.config.batch_size,
-        use_batch: prev.use_batch ?? data.config.use_batch,
+        interval: data.config.interval || prev.interval || 1,
+        stations: data.config.stations || prev.stations || 5,
+        collector_url: data.config.collector_url || prev.collector_url || 'http://localhost:8001/weather-data',
+        duplicate_percent: data.config.duplicate_percent || prev.duplicate_percent || 20,
+        batch_size: data.config.batch_size || prev.batch_size || 10,
+        use_batch: typeof data.config.use_batch !== 'undefined' ? data.config.use_batch : (prev.use_batch || true),
       }));
-
+      
+      setError(null);
     } catch (err) {
       console.error("Fetch status error:", err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred while fetching status.');
-      setStatus(null); // Clear status on error
-      setLastMessagesPerSecond(0);
+      
+      // Try the next URL if this one failed
+      if (retryCount >= 2) {
+        setCurrentUrlIndex((prevIndex) => (prevIndex + 1) % generatorUrls.length);
+        setRetryCount(0);
+      } else {
+        setRetryCount(prev => prev + 1);
+      }
+      
+      // Show a more helpful error message
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError(`Connection to generator service timed out. Retrying...\nURL: ${generatorBaseUrl}`);
+      } else {
+        setError(`Failed to connect to generator service (${generatorBaseUrl}). Retrying...`);
+      }
+      
+      // Schedule a retry if not already retrying
+      if (!retryTimer) {
+        const timer = setTimeout(() => {
+          fetchStatus();
+          setRetryTimer(null);
+        }, 2000);
+        setRetryTimer(timer);
+      }
     } finally {
       setLoading(false);
     }
-  }, [loading, generatorBaseUrl, lastPollTime, previousTotalGenerated]); // Add dependencies
+  }, [loading, generatorBaseUrl, lastPollTime, previousTotalGenerated, retryCount, retryTimer]); // Add dependencies
 
   // --- Start/Stop Functions ---
   const handleStart = async () => {
@@ -126,23 +188,37 @@ const GeneratorUI: React.FC = () => {
     setError(null);
     console.log("Sending start config:", config);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
       const response = await fetch(`${generatorBaseUrl}/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
+        credentials: 'omit',
         body: JSON.stringify(config), // Send current config state
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-         const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
       }
+      
       // Successfully started, fetch status immediately
       await fetchStatus();
       startPolling(); // Ensure polling is active
     } catch (err) {
       console.error("Start error:", err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred while starting.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Connection timed out while trying to start the generator. Please try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred while starting.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -152,21 +228,37 @@ const GeneratorUI: React.FC = () => {
     setActionLoading(true);
     setError(null);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
       const response = await fetch(`${generatorBaseUrl}/stop`, {
         method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        credentials: 'omit',
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-         const errorData = await response.json().catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
       }
-       // Successfully stopped, fetch status immediately and stop polling
+      
+      // Successfully stopped, fetch status immediately and stop polling
       stopPolling();
       await fetchStatus();
       setLastMessagesPerSecond(0); // Explicitly reset rate on stop
-
     } catch (err) {
       console.error("Stop error:", err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred while stopping.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Connection timed out while trying to stop the generator. Please try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred while stopping.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -194,14 +286,14 @@ const GeneratorUI: React.FC = () => {
   // --- Effects ---
   // Initial fetch and start polling if generator is running
   useEffect(() => {
+    console.log("Component mounted, fetching initial status");
     fetchStatus().then(() => {
       // Check initial status after fetch completes
-      setStatus(currentStatus => {
-        if (currentStatus?.is_generating && !pollIntervalId) {
-          startPolling();
-        }
-        return currentStatus; // Return the state for setStatus
-      });
+      if (status?.is_generating && !pollIntervalId) {
+        startPolling();
+      }
+    }).catch(err => {
+      console.error("Initial fetch error:", err);
     });
 
     // Cleanup interval on component unmount
@@ -218,8 +310,16 @@ const GeneratorUI: React.FC = () => {
     } else if (!status?.is_generating && pollIntervalId) {
       stopPolling();
     }
-    // No cleanup function here, managed by mount/unmount effect
-  }, [status?.is_generating, pollIntervalId, startPolling, stopPolling]); // Add stopPolling to dependency array
+  }, [status?.is_generating, pollIntervalId, startPolling]); // Add dependencies
+
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [retryTimer]);
 
   // --- Config Input Handler ---
   const handleConfigChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>) => {
@@ -252,165 +352,201 @@ const GeneratorUI: React.FC = () => {
     }));
   };
 
-  // --- Render ---
+  // --- Render Helper Functions ---
+  const renderStatusCard = () => {
+    return (
+      <Card variant="outlined" sx={{ minWidth: 275, mb: 2 }}>
+        <CardContent>
+          <Typography variant="h6" component="div" sx={{ mb: 1 }}>
+            Status
+          </Typography>
+          {loading && !status ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+              <CircularProgress size={24} />
+            </Box>
+          ) : status ? (
+            <>
+              <Typography color="text.secondary" gutterBottom>
+                Generator is {status.is_generating ? 'running' : 'stopped'}
+              </Typography>
+              <Typography variant="body2">
+                Total records: {status.total_generated || 0}
+              </Typography>
+              <Typography variant="body2">
+                Duplicates: {status.total_duplicates || 0} ({status.total_generated ? Math.round((status.total_duplicates / status.total_generated) * 100) : 0}%)
+              </Typography>
+              <Typography variant="body2">
+                Throughput: {lastMessagesPerSecond} records/sec
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontSize: '0.8rem' }}>
+                Connected to: {generatorBaseUrl}
+              </Typography>
+            </>
+          ) : (
+            <Typography color="text.secondary">
+              No status data available. Trying to connect to generator service...
+            </Typography>
+          )}
+          {error && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <Box sx={{ mt: 2 }}>
+            <Button 
+              variant="outlined" 
+              onClick={fetchStatus} 
+              disabled={loading}
+              size="small"
+              sx={{ mr: 1 }}
+            >
+              {loading ? <CircularProgress size={20} /> : 'Refresh Status'}
+            </Button>
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => setCurrentUrlIndex((prevIndex) => (prevIndex + 1) % generatorUrls.length)}
+              disabled={loading}
+            >
+              Try Different URL
+            </Button>
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderActionButtons = () => {
+    return (
+      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleStart}
+          disabled={actionLoading || (status?.is_generating === true)}
+          sx={{ mr: 2 }}
+        >
+          {actionLoading ? <CircularProgress size={24} /> : 'Start Generator'}
+        </Button>
+        <Button
+          variant="contained"
+          color="secondary"
+          onClick={handleStop}
+          disabled={actionLoading || (status?.is_generating === false)}
+        >
+          {actionLoading ? <CircularProgress size={24} /> : 'Stop Generator'}
+        </Button>
+      </Box>
+    );
+  };
+
+  const renderConfigForm = () => {
+    return (
+      <Card variant="outlined" sx={{ minWidth: 275, mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" component="div" sx={{ mb: 2 }}>
+            Generator Configuration
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Interval (seconds)"
+                name="interval"
+                type="number"
+                value={config.interval ?? ''}
+                onChange={handleConfigChange}
+                variant="outlined"
+                size="small"
+                InputProps={{ inputProps: { min: 1 } }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Number of Stations"
+                name="stations"
+                type="number"
+                value={config.stations ?? ''}
+                onChange={handleConfigChange}
+                variant="outlined"
+                size="small"
+                InputProps={{ inputProps: { min: 1 } }}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Collector URL"
+                name="collector_url"
+                value={config.collector_url ?? ''}
+                onChange={handleConfigChange}
+                variant="outlined"
+                size="small"
+                placeholder="http://localhost:8001/weather-data"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Duplicate Percentage"
+                name="duplicate_percent"
+                type="number"
+                value={config.duplicate_percent ?? ''}
+                onChange={handleConfigChange}
+                variant="outlined"
+                size="small"
+                InputProps={{ inputProps: { min: 0, max: 100 } }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Batch Size"
+                name="batch_size"
+                type="number"
+                value={config.batch_size ?? ''}
+                onChange={handleConfigChange}
+                variant="outlined"
+                size="small"
+                InputProps={{ inputProps: { min: 1 } }}
+                disabled={!config.use_batch}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={config.use_batch ?? false}
+                    onChange={handleConfigChange}
+                    name="use_batch"
+                  />
+                }
+                label="Use Batch Mode"
+              />
+            </Grid>
+          </Grid>
+          {renderActionButtons()}
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
-    <Container maxWidth="md">
-      <Box sx={{ my: 4 }}>
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Paper elevation={3} sx={{ p: 3 }}>
         <Typography variant="h4" component="h1" gutterBottom>
           Data Generator Control
         </Typography>
+        <Typography variant="body1" paragraph>
+          Configure and control the weather data generation process.
+        </Typography>
+        <Divider sx={{ my: 2 }} />
 
-        {/* Error Display */}
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
+        {renderStatusCard()}
+        {renderConfigForm()}
 
-        <Grid container spacing={3}>
-          {/* Control Panel */}
-          <Grid item xs={12} md={5}>
-            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Typography variant="h6">Controls</Typography>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleStart}
-                  disabled={actionLoading || status?.is_generating}
-                  startIcon={actionLoading ? <CircularProgress size={20} color="inherit" /> : null}
-                >
-                  Start
-                </Button>
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  onClick={handleStop}
-                  disabled={actionLoading || !status?.is_generating}
-                  startIcon={actionLoading ? <CircularProgress size={20} color="inherit" /> : null}
-                >
-                  Stop
-                </Button>
-              </Box>
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="h6">Configuration</Typography>
-              <TextField
-                  label="Interval (seconds)"
-                  name="interval"
-                  type="number"
-                  value={config.interval ?? ''}
-                  onChange={handleConfigChange}
-                  size="small"
-                  inputProps={{ min: 0 }}
-              />
-              <TextField
-                  label="Number of Stations"
-                  name="stations"
-                  type="number"
-                  value={config.stations ?? ''}
-                  onChange={handleConfigChange}
-                  size="small"
-                  inputProps={{ min: 1 }}
-              />
-               <TextField
-                  label="Collector URL"
-                  name="collector_url"
-                  value={config.collector_url ?? ''}
-                  onChange={handleConfigChange}
-                  size="small"
-              />
-               <TextField
-                  label="Duplicate %"
-                  name="duplicate_percent"
-                  type="number"
-                  value={config.duplicate_percent ?? ''}
-                  onChange={handleConfigChange}
-                  size="small"
-                  inputProps={{ min: 0, max: 100 }}
-              />
-              <FormControlLabel
-                control={<Switch checked={config.use_batch ?? false} onChange={handleConfigChange} name="use_batch" />}
-                label="Use Batch Sending"
-              />
-               {config.use_batch && (
-                <TextField
-                    label="Batch Size"
-                    name="batch_size"
-                    type="number"
-                    value={config.batch_size ?? ''}
-                    onChange={handleConfigChange}
-                    size="small"
-                    inputProps={{ min: 1 }}
-                />
-               )}
-                 <Typography variant="caption" color="textSecondary">
-                  Note: Changes are applied when 'Start' is clicked.
-                 </Typography>
-            </Paper>
-          </Grid>
-
-          {/* Status Display */}
-          <Grid item xs={12} md={7}>
-             <Paper sx={{ p: 2, height: '100%' }}>
-              <Typography variant="h6" gutterBottom>Status</Typography>
-              {loading && !status && <CircularProgress size={24} />}
-              {!status && !loading && <Typography>No status data available. Try fetching.</Typography>}
-              {status && (
-                <Grid container spacing={1}>
-                  <Grid item xs={12}>
-                     <Card variant="outlined">
-                       <CardContent sx={{ textAlign: 'center', bgcolor: status.is_generating ? 'success.light' : 'warning.light' }}>
-                           <Typography variant="h5" component="div">
-                            {status.is_generating ? 'GENERATING' : 'STOPPED'}
-                           </Typography>
-                       </CardContent>
-                     </Card>
-                  </Grid>
-                  <Grid item xs={6}>
-                      <Typography variant="body1">Messages/sec:</Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                       <Typography variant="h6" align='right'>{lastMessagesPerSecond}</Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography>Total Generated:</Typography>
-                  </Grid>
-                  <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                    <Typography>{status.total_generated ?? 'N/A'}</Typography>
-                  </Grid>
-                   <Grid item xs={6}>
-                     <Typography>Total Duplicates:</Typography>
-                  </Grid>
-                  <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                    <Typography>{status.total_duplicates ?? 'N/A'} ({status.config?.duplicate_percent}%)</Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography>Mode:</Typography>
-                  </Grid>
-                  <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                    <Typography>{status.config?.use_batch ? `Batch (Size: ${status.config.batch_size})` : 'Individual'}</Typography>
-                  </Grid>
-                   <Grid item xs={6}>
-                    <Typography>Interval:</Typography>
-                  </Grid>
-                  <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                    <Typography>{status.config?.interval}s</Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography>Stations:</Typography>
-                  </Grid>
-                  <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                    <Typography>{status.config?.stations}</Typography>
-                  </Grid>
-                   <Grid item xs={12} sx={{ mt: 1}}>
-                    <Typography variant='caption' color='textSecondary'>Collector: {status.info?.external_collector_url ?? 'N/A'}</Typography>
-                  </Grid>
-                </Grid>
-              )}
-            </Paper>
-          </Grid>
-        </Grid>
-      </Box>
+      </Paper>
     </Container>
   );
 };

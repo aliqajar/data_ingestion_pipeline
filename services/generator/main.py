@@ -11,6 +11,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware  # Add CORS middleware import
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +24,15 @@ load_dotenv()
 
 app = FastAPI(title="Weather Data Generator Service")
 
+# Add CORS middleware to allow requests from the UI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
+
 # Service configuration
 PORT = int(os.getenv('GENERATOR_PORT', '8004'))
 HOST = os.getenv('HOST', '0.0.0.0')
@@ -34,6 +44,7 @@ DEFAULT_USE_BATCH = os.getenv('GENERATOR_USE_BATCH', 'true').lower() == 'true'  
 
 logger.info(f"Starting Generator service on {HOST}:{PORT}")
 logger.info(f"Default collector URL: {DEFAULT_COLLECTOR_URL}")
+logger.info("CORS middleware enabled for all origins")
 
 # Global state variables - initialize at module level
 is_generating = False

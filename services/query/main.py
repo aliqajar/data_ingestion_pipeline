@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Dict, Any
 import psycopg2
 import redis
@@ -104,6 +105,23 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Query service")
 
 app = FastAPI(title="Weather Data Query Service", lifespan=lifespan)
+
+# --- Add CORS middleware --- 
+origins = [
+    "http://localhost",
+    "http://localhost:3000", # Default React dev port
+    "http://localhost:3001", # Possible React dev port (if using start:query)
+    # Add any other origins if your UI might be served from elsewhere
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"], # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"], # Allow all headers
+)
+# --- End CORS middleware ---
 
 @app.get("/health")
 async def health_check():
