@@ -1,6 +1,5 @@
 # Weather System Pipeline
 
-Cursor and Claude 3.5 - Sonnet is used to write the code. 
 A high-performance weather data ingestion and query system built with React (TypeScript), FastAPI, Kafka, PostgreSQL (TimescaleDB), and Redis.
 
 ## Quick Start
