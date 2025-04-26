@@ -29,12 +29,20 @@ npm start
 
 Access the UI on port 3000 (http://localhost:3000/)
 
+
+#### Generator UI
 ![Generator UI](media/generator_ui.png)
 
+
+#### Query UI - Raw
 ![Query UI - Raw](media/query_ui_raw.png)
 
+
+#### Query UI - Aggregate
 ![Query UI - Aggregate](media/query_ui_agg.png)
 
+
+#### Query UI - Timeseries
 ![Query UI - Timeseries](media/query_ui_ts.png)
 
 
