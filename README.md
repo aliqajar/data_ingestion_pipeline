@@ -20,6 +20,12 @@ For subsequent runs, you can simply use:
 docker compose up -d
 ```
 ### Running UI
+```bash
+cd ui
+npm install # if not installed
+npm start
+```
+
 Access the UI on port 3000 (http://localhost:3000/)
 
 ![Generator UI](media/generator_ui.png)
